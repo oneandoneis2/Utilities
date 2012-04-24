@@ -1,0 +1,184 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use v5.10;
+
+use Data::Dumper;
+use Getopt::Long;
+use Config::General;
+
+=head1 vai
+
+Command to open all matching files within your current directory and subdirectories
+(excluding any directories that are specified in the config files /etc/vai and ~/.vai)
+e.g.
+
+    vai file.txt
+
+will open ./file.txt, ./directory/file.txt, ./sub/directory/file.txt
+
+Broadly speaking
+
+    vai file.txt
+
+is equivalent to
+
+    vi `find . -path *file.txt*`
+
+and
+
+    vai foo --grep 'bar'
+
+is equivalent to
+
+    vi `grep 'bar' -rl foo`
+
+except that neither of the above will limit itself to text files,
+nor exclude unwanted directories.
+
+Accepts the command-line arguments:
+    --preview
+        - show a numbered list of the files that would be opened in non-preview mode
+    --regex
+        - interpolate the filename as a regex instead of a literal string
+    --grep 'string'
+        - look for files containing the string, not one whose name includes it
+    --nonum
+        - Show the preview without numbering it
+    (any number)
+        - open the file of the corresponding number as seen in the preview
+=cut
+
+my $preview = undef;
+my $grep    = undef;
+my $nonum   = undef;
+my $regex   = undef;
+GetOptions(
+    'preview'   => \$preview,
+    'grep=s'    => \$grep,
+    'nonum'     => \$nonum,
+    'regex'     => \$regex,
+    );
+
+# Get the filename from passed-in argument - should always be the first non-getopt arg
+my $path = shift @ARGV;
+# If they've specified another argument, it should be a number, which should be a valid
+# specifier for the file they wanted. But we can't test for this until later.
+my $specify = shift @ARGV;
+# Die silently if we don't have something to search for
+# We don't want an error message as (a) it's obvious and (b) it interferes with tab completion
+exit unless $path;
+
+# Specify the editor to use and the directories to skip
+# Look in the /etc directory and the user's home directory for config files
+my $home = $ENV{HOME};
+my ($global_conf, $user_conf);
+$global_conf    = new Config::General('/etc/vai') if -r '/etc/vai';
+$user_conf      = new Config::General("$home/.vai") if -r "$home/.vai";
+my %global_config  = $global_conf ? $global_conf->getall : qw//;
+my %user_config    = $user_conf ? $user_conf->getall : qw//;
+
+# We take user's config over the global, and default to vim if neither specifies
+my $editor = $user_config{editor} || $global_config{editor} || 'vim';
+my @excludes = (keys %{$global_config{excludes}}, keys %{$user_config{excludes}});
+
+# Get the list of files via recursive function or grep
+# Probably should try and avoid using the global @files array, but I can't really be bothered
+my @files;
+dir_walk();
+
+# Just show the files if we're using preview
+if ($preview) {
+    # If they don't want the files numbered, we can just say them
+    if ($nonum) {
+        say for @files;
+        }
+    # Else we need to be a bit fancier
+    else {
+        for my $count (0..$#files) {
+            printf("%02d)%s\n", $count+1, $files[$count]);
+            }
+        }
+    exit;
+    }
+
+# We now need to check if the specifier was valid. If not, we ignore it
+unless ($specify && $specify =~ m#^\d+$# && $specify <= @files) {
+    $specify = undef;
+    }
+
+# Stop if we're trying to open more than a sensible number of files;
+my $results = scalar @files;
+if ($results > 20 && !$specify) {
+    say "Too many files ($results) - exiting.";
+    exit;
+    }
+
+# All seems well - get the filename(s) into a string
+my $files;
+# If they've specified which file they want to open, only open that one.
+# Decrement $specify here because the file list isn't zero-indexed
+if ($specify--) {
+    $files = $files[$specify];
+    }
+else {
+    $files = join ' ', @files;
+    }
+
+# Open them with our preferred editor
+system("$editor $files");
+
+# That's it. Just define the recursive file-finding subroutine we called earlier now
+
+sub dir_walk {
+    my ($dir_path) = @_;
+    # If dir_path hasn't been sent in, we either want $path (if grepping) or the current dir.
+    $dir_path //= $grep ? $path : '.';
+    my $dir;
+
+    # Is this a file we want? i.e. a text file with a valid path
+    if (# Use \Q...\E to avoid things like periods being construed as wildcards
+        # unless we're explicitly using it as a regex
+        ($regex ? $dir_path =~ m#$path# : $dir_path =~ m#\Q$path\E#)
+        && -T $dir_path
+        ) {
+        # If we're grepping, check the file contents for the string
+        my $match;
+        if ($grep) {
+            open(my $file, '<', $dir_path);
+            while (my $line = <$file>) {
+                $match = $line =~ m#$grep#;
+                # Stop looking as soon as we find one match
+                last if $match;
+                }
+            close $file;
+            }
+        # This is a file we want if we grepped & have a match; or we got here without grepping
+        if (!$grep || $match) {
+            push @files, $dir_path;
+            }
+        }
+    # If it's not a wanted file, is it a directory?
+    # Be appropriately recursive for directories
+    elsif (-d $dir_path) {
+        # Check if this is a directory we want to skip
+        my $excluded;
+        foreach my $exclude (@excludes) {
+            $excluded = 1 if $dir_path =~ m#$exclude$#;
+            }
+
+        # Skip excluded directories and symlinks
+        unless ($excluded || -l $dir_path) {
+            my $file;
+            unless (opendir $dir, $dir_path) {
+                warn "Couldn't open directory $dir_path: $!; skipping.\n";
+                return;
+                }
+            while ($file = readdir $dir) {
+                next if $file eq '.' || $file eq '..';
+                dir_walk("$dir_path/$file");
+                }
+            }
+        }
+    }

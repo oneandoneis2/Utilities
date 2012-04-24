@@ -1,0 +1,5 @@
+editor  = vim
+<excludes>
+    .svn    => 1
+    .git    => 1
+</excludes>

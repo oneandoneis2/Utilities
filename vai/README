@@ -1,0 +1,9 @@
+vai is a command-line tool to allow you to open files in any subdirectory
+without knowing its precise location.
+
+- 'vai' should be moved to a location in your PATH such as /usr/bin
+
+- 'etc_vai' should be moved to /etc/vai and modified for your favourite editor
+    and any directories you want it to exclude
+- 'bash_vai' should be moved to /etc/bash_completion.d/vai to allow
+    tab-completion to work

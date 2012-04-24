@@ -1,0 +1,11 @@
+_vai()
+{
+    local cur names
+    COMPRELPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+
+    names=$(for x in `vai ${cur} --preview`; do echo ${x}; done)
+    COMPREPLY=( ${names} ${cur} )
+    return 0
+    }
+complete -F _vai vai
