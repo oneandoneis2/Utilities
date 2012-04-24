@@ -1,0 +1,7 @@
+g2 is for use when you have many servers that you want to get to without
+having to specify the full server name; and also to specify what directory
+you want to start from once you get there
+
+Just copy the file to a location in your PATH and modify the code to handle
+your servers & locations. You should be able to just copy & modify the existing
+examples.

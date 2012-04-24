@@ -1,0 +1,144 @@
+#!/usr/bin/perl
+
+use v5.10;
+use strict;
+use warnings;
+
+my $first = $ARGV[0];
+exit unless $first;
+
+# Handle requests to show help
+show_help()     if ($first eq '-h' || $first eq '--help');
+generate_help() if  $first eq '--gen_help';
+
+# They didn't ask for help, so get the arguments they DID send in
+my $server  = $first;
+my $dest    = $ARGV[1];
+
+# Get the full server name from whatever they sent in, or complain bitterly that we can't
+my $servername = get_servername($server);
+
+# Now that we know what server they want, start to work out what command we need to run
+my $ssh_command = "ssh $servername";
+
+# Do we have a valid destination command?
+if ($dest and my $resp = destination($dest)) {
+    $ssh_command .= " -t '" . $resp->{command} . " && bash'";
+    }
+
+# We have it all worked out. Execute the command
+system("$ssh_command");
+
+################################################################################
+# Script is done, define the subs it uses here
+################################################################################
+
+# Possible destinations that can be specified
+sub destination {
+    my ($arg) = @_;
+    my %dispatch = (
+        vl => {
+            purpose => "Take user to /var/log",
+            command => "cd /var/log",
+            },
+        );
+    if ($arg eq 'info') {
+        foreach my $dest (sort keys %dispatch) {
+            say "\t$dest\t- ".$dispatch{$dest}{purpose};
+            }
+        return;
+        }
+    return 0 unless exists $dispatch{$arg};
+    return $dispatch{$arg};
+    }
+
+# Work out the correct working directory based on server
+sub wd {
+    my $dir = 'cd /var/c+i/cust/';
+    given ($servername) {
+        when ("devel")  { return $dir.'hertz' }
+        when ("test")   { return $dir.'upgrade' }
+        default         { return $dir.($servername||'') }
+        }
+    }
+
+sub get_servername {
+    my ($server) = @_;
+
+    # List of known servers
+    my %servers = (
+        devel       => 'devel',
+        web         => 'web',
+        );
+
+    # If they asked for info, print a list of servers then exit
+    if ($server eq 'info') {
+        foreach my $server (sort keys %servers) {
+            say "\t$server ($servers{$server})";
+            }
+        return;
+        }
+
+    # Since they can supply a partial name, get all possible replies
+    my @possibles = grep { /^$server/ } sort keys %servers;
+    # If we didn't get any, there's nothing else we can do
+    die "I don't know what server you mean" unless @possibles;
+    # If we got at least one, return only the first
+    return $servers{$possibles[0]};
+    }
+
+# The help should print the POD, plus the actual list of servers & flags
+sub generate_help {
+    # Because we can't trust this file to be in one specific place:
+    my $file = __FILE__;
+    say `perldoc $file`;
+    # Now generate the list of servers & destinations from the code itself
+    say 'Available servers (Can be abbreviated to first unique string)';
+    get_servername('info');
+    say "\nAvailable destinations (Cannot be abbreviated)";
+    destination('info');
+    # Lastly, print some examples - maybe find a nicer way to do this at some point..?
+    print <<EOF;
+
+Examples:
+
+Go to live web server's webXG directory
+    g2 w wxg
+
+Go to staging's test webXG server
+    g2 s test
+
+Go to eu-test's carsplus directory
+    g2 t wd
+
+Go to hza001's carsplus directory
+    g2 hz wd
+    (Requires 'hz' instead of just 'h' due to 'hes001' being a valid match for 'h')
+
+EOF
+    exit;
+    }
+
+sub show_help {
+    # App calls itself here so we can pipe its output to less
+    # __FILE__ is only needed so a development version will call itself
+    # instead of the normal version
+    my $g2 = __FILE__;
+    system("$g2 --gen_help | less");
+    exit;
+    }
+
+=head1 g2
+
+=head2 An application to get you where you want to go ASAP
+
+B<Usage:> g2 <server> [<destination>]
+
+example: You want to connect to the "development" server in the /var/log directory
+
+The command might look something like:
+C<g2 dev vl>
+
+See C<g2 --help> for details of specified servers & flags
+
+=cut
