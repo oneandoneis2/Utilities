@@ -23,7 +23,12 @@ my $ssh_command = "ssh $servername";
 
 # Do we have a valid destination command?
 if ($dest and my $resp = destination($dest)) {
-    $ssh_command .= " -t '" . $resp->{command} . " && bash'";
+    if ($resp->{subdir}) {
+        $ssh_command .= " -t '" . $resp->{command} . '/' . $resp->{subdir} . " && bash'";
+        }
+    else {
+        $ssh_command .= " -t '" . $resp->{command} . " && bash'";
+        }
     }
 
 # We have it all worked out. Execute the command
@@ -48,18 +53,18 @@ sub destination {
             }
         return;
         }
-    return 0 unless exists $dispatch{$arg};
-    return $dispatch{$arg};
-    }
-
-# Work out the correct working directory based on server
-sub wd {
-    my $dir = 'cd /var/c+i/cust/';
-    given ($servername) {
-        when ("devel")  { return $dir.'hertz' }
-        when ("test")   { return $dir.'upgrade' }
-        default         { return $dir.($servername||'') }
+    # We want to handle subdirectories appended to known commands
+    my $subdir;
+    if ($arg =~ m#/#) {
+        ($arg, $subdir) = $arg =~ m#^([^/]+)/(.*)$#;
         }
+
+    # No action found, return nothing
+    return 0 unless exists $dispatch{$arg};
+    # If we had a subdir passed in, add it to the hash we're about to return
+    my $result = $dispatch{$arg};
+    $result->{subdir} = $subdir;
+    return $result;
     }
 
 sub get_servername {
