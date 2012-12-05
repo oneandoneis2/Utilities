@@ -1,0 +1,53 @@
+#!/usr/bin/env perl
+
+use v5.12;
+use warnings;
+
+my $arg = $ARGV[0] || '';
+my @files;
+
+# If 'd' was passed in, get the files that make the current repo dirty
+if ($arg eq 'd') {
+    # We only need the 'short' output - basically the list of files
+    my @gitstat = `git status -s`;
+    # Filter down to just the filenames we want - i.e. the second 'argument'
+    @files = map { s/^\s*\S*\s+(\S+)/$1/; $_; } @gitstat;
+    }
+else {
+    # Get last/specified git commit
+    my @gitstat = `git show --stat $arg`;
+    # Filter down to just the filenames we want
+    # Filenames are in the format ' <name> | <number> +-
+    @files = map { s#^\s+(\S+)\s.*#$1#; $_ } grep { m#^\s\S+\s+\|\s+\d+\s+[+-]+# } @gitstat;
+    }
+
+# Don't go crazy on big commits
+if (my $num = scalar @files > 9) {
+    say "There are $num files, are you sure you want to do this?";
+    my $answer = <>;
+    exit unless $answer =~ m#y#i;
+    }
+
+# Open the files in vi
+my $files;
+map { chomp $_; $files .= "$_ "; } @files;
+exec("vi $files");
+
+=head1 vic
+
+Open files based on git commits/status
+
+=head2 USAGE
+
+=over
+
+=item vic [d | SHA]
+
+=back
+
+By default, vic opens the files that were committed in the current branch's HEAD.
+
+If it is passed a specific SHA, it opens instead the files committed to that SHA.
+
+If it is passed 'd', it opens the files in your current checkout that you have already edited,
+i.e. the files that make your checkout dirty
